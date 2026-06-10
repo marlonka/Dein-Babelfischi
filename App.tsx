@@ -1,728 +1,351 @@
-
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
-import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { ConversationBubble } from './components/ConversationBubble';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BottomControls } from './components/BottomControls';
-import { ApiToggle } from './components/ApiToggle';
-import { RegionSelector } from './components/RegionSelector';
-import { Language, AppState, ConversationMessage, LanguagePair, MessageDirection, SystemMessage, ConversationBubbleMessage, GeminiAsrResponse, VertexRegion } from './types';
-import { transcribeAndTranslateStream, generateSpeech } from './services/geminiService';
-import { playPcmAudio } from './utils/audioUtils';
+import { ConversationBubble } from './components/ConversationBubble';
+import { useLiveMicrophone } from './hooks/useLiveMicrophone';
+import { LiveTranslateClient } from './services/liveTranslateService';
+import {
+  AppState,
+  ConversationBubbleMessage,
+  DEFAULT_TARGET_LANGUAGE_CODE,
+  getGermanLanguageNameByCode,
+  getLanguageByCode,
+  MessageDirection,
+} from './types';
+import { PcmAudioQueue } from './utils/pcmAudioQueue';
 
-// --- SVG Icons ---
-const BackIcon = ({ className = "w-6 h-6" }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className={className}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15" />
-  </svg>
-);
-const HistoryIcon = () => <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="currentColor"><path d="M0 0h24v24H0z" fill="none"/><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>;
-const CloseIcon = ({ className = "w-6 h-6" }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className={className}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-  </svg>
-);
+const BabelfischiLogo = ({ className = 'w-32 h-32' }) => (
+  <svg className={className} viewBox="0 0 160 160" role="img" aria-label="Dein Babelfischi Logo" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <radialGradient id="bowl-water" cx="45%" cy="55%" r="60%">
+        <stop offset="0%" stopColor="#a3e6f5" stopOpacity="0.4" />
+        <stop offset="65%" stopColor="#30c5eb" stopOpacity="0.7" />
+        <stop offset="100%" stopColor="#0a89b3" stopOpacity="0.9" />
+      </radialGradient>
+      
+      <linearGradient id="glass-reflection" x1="10%" y1="10%" x2="90%" y2="90%">
+        <stop offset="0%" stopColor="#ffffff" stopOpacity="0.9" />
+        <stop offset="25%" stopColor="#ffffff" stopOpacity="0.1" />
+        <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+      </linearGradient>
 
-const listeningPrompts: Record<string, string> = {
-    [Language.German]: "Übersetze...",
-    [Language.English]: "Translate...",
-    [Language.Spanish]: "Traducir...",
-    [Language.French]: "Traduire...",
-    [Language.Polish]: "Tłumacz...",
-    [Language.Turkish]: "Çevir...",
-    [Language.Romanian]: "Traduceți...",
-    [Language.Arabic]: "ترجم...",
-    [Language.Hindi]: "अनुवाद...",
-    [Language.Indonesian]: "Menerjemahkan...",
-    [Language.Italian]: "Traduci...",
-    [Language.Japanese]: "翻訳...",
-    [Language.Korean]: "번역...",
-    [Language.Portuguese]: "Traduzir...",
-    [Language.Russian]: "Перевести...",
-    [Language.Dutch]: "Vertalen...",
-    [Language.Thai]: "แปล...",
-    [Language.Vietnamese]: "Dịch...",
-    [Language.Ukrainian]: "Перекласти...",
-    [Language.Bengali]: "অনুবাদ...",
-    [Language.Tamil]: "மொழிபெயர்...",
-    [Language.Telugu]: "అనువదించు...",
-    [Language.Marathi]: "भाषांतर...",
-}
+      <linearGradient id="fish-body" x1="0%" y1="100%" x2="100%" y2="0%">
+        <stop offset="0%" stopColor="#3b82f6" />
+        <stop offset="25%" stopColor="#8b5cf6" />
+        <stop offset="50%" stopColor="#ec4899" />
+        <stop offset="75%" stopColor="#f97316" />
+        <stop offset="100%" stopColor="#eab308" />
+      </linearGradient>
+      
+      <linearGradient id="fish-fin" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#06b6d4" />
+        <stop offset="100%" stopColor="#8b5cf6" />
+      </linearGradient>
 
-const instructionalPrompts: Record<string, string> = {
-    [Language.German]: "Sprachen auswählen & zum Übersetzen sprechen",
-    [Language.English]: "Select languages & speak to translate",
-    [Language.Spanish]: "Selecciona idiomas y habla para traducir",
-    [Language.French]: "Sélectionnez les langues & parlez",
-    [Language.Polish]: "Wybierz języki i mów, aby tłumaczyć",
-    [Language.Turkish]: "Dilleri seçin ve çevirmek için konuşun",
-    [Language.Romanian]: "Selectați limbile și vorbiți pentru a traduce",
-    [Language.Arabic]: "اختر اللغات وتحدث للترجمة",
-    [Language.Hindi]: "भाषाएँ चुनें और अनुवाद करने के लिए बोलें",
-    [Language.Indonesian]: "Pilih bahasa & bicaralah untuk menerjemahkan",
-    [Language.Italian]: "Seleziona le lingue e parla per tradurre",
-    [Language.Japanese]: "言語を選択して話すと翻訳します",
-    [Language.Korean]: "언어를 선택하고 번역하려면 말하세요",
-    [Language.Portuguese]: "Selecione os idiomas e fale para traduzir",
-    [Language.Russian]: "Выберите языки и говорите для перевода",
-    [Language.Dutch]: "Selecteer talen & spreek om te vertalen",
-    [Language.Thai]: "เลือกภาษาและพูดเพื่อแปล",
-    [Language.Vietnamese]: "Chọn ngôn ngữ và nói để dịch",
-    [Language.Ukrainian]: "Виберіть мови та говоріть для перекладу",
-    [Language.Bengali]: "ভাষা নির্বাচন করুন এবং অনুবাদ করতে কথা বলুন",
-    [Language.Tamil]: "மொழிகளைத் தேர்ந்தெடுத்து மொழிபெயர்க்கப் பேசுங்கள்",
-    [Language.Telugu]: "భాషలను ఎంచుకుని, అనువదించడానికి మాట్లాడండి",
-    [Language.Marathi]: "भाषा निवडा आणि भाषांतर करण्यासाठी बोला",
-};
+      <radialGradient id="cheek-glow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#ffffff" stopOpacity="0.6" />
+        <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+      </radialGradient>
 
+      <filter id="fish-glow" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="4" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
 
-const disclaimerPrompts: Record<string, string> = {
-    [Language.German]: "KI-gestützte Übersetzung",
-    [Language.English]: "AI-powered translation",
-    [Language.Spanish]: "Traducción impulsada por IA",
-    [Language.French]: "Traduction optimisée par l'IA",
-    [Language.Polish]: "Tłumaczenie wspomagane przez AI",
-    [Language.Turkish]: "Yapay zeka destekli çeviri",
-    [Language.Romanian]: "Traducere bazată pe inteligență artificială",
-    [Language.Arabic]: "ترجمة مدعومة بالذكاء الاصطناعي",
-    [Language.Hindi]: "एआई-संचालित अनुवाद",
-    [Language.Indonesian]: "Terjemahan bertenaga AI",
-    [Language.Italian]: "Traduzione basata su IA",
-    [Language.Japanese]: "AIによる翻訳",
-    [Language.Korean]: "AI 기반 번역",
-    [Language.Portuguese]: "Tradução com tecnologia de IA",
-    [Language.Russian]: "Перевод на базе ИИ",
-    [Language.Dutch]: "AI-aangedreven vertaling",
-    [Language.Thai]: "การแปลภาษาด้วย AI",
-    [Language.Vietnamese]: "Bản dịch được hỗ trợ bởi AI",
-    [Language.Ukrainian]: "Переклад на основі ШІ",
-    [Language.Bengali]: "এআই-চালিত অনুবাদ",
-    [Language.Tamil]: "AI-ஆல் இயங்கும் மொழிபெயர்ப்பு",
-    [Language.Telugu]: "AI- ఆధారిత అనువాదం",
-    [Language.Marathi]: "AI- आधारित भाषांतर",
-};
+      <filter id="bowl-shadow" x="-30%" y="-30%" width="160%" height="160%">
+        <feDropShadow dx="0" dy="16" stdDeviation="12" floodColor="#061c2b" floodOpacity="0.15" />
+      </filter>
+    </defs>
 
-const germanLanguageMap: Record<string, string> = {
-    [Language.English]: "Englisch",
-    [Language.German]: "Deutsch",
-    [Language.Spanish]: "Spanisch",
-    [Language.French]: "Französisch",
-    [Language.Polish]: "Polnisch",
-    [Language.Turkish]: "Türkisch",
-    [Language.Romanian]: "Rumänisch",
-    [Language.Arabic]: "Arabisch",
-    [Language.Hindi]: "Hindi",
-    [Language.Indonesian]: "Indonesisch",
-    [Language.Italian]: "Italienisch",
-    [Language.Japanese]: "Japanisch",
-    [Language.Korean]: "Koreanisch",
-    [Language.Portuguese]: "Portugiesisch",
-    [Language.Russian]: "Russisch",
-    [Language.Dutch]: "Niederländisch",
-    [Language.Thai]: "Thailändisch",
-    [Language.Vietnamese]: "Vietnamesisch",
-    [Language.Ukrainian]: "Ukrainisch",
-    [Language.Bengali]: "Bengalisch",
-    [Language.Tamil]: "Tamil",
-    [Language.Telugu]: "Telugu",
-    [Language.Marathi]: "Marathi",
-};
+    <ellipse cx="80" cy="148" rx="42" ry="10" fill="#000000" opacity="0.3" filter="url(#bowl-shadow)" />
 
-const getLocalizedDisplayName = (lang: Language): string => {
-    const germanName = germanLanguageMap[lang];
-    const nativeName = lang.match(/\(([^)]+)\)/)?.[0] || '';
-    return `${germanName} ${nativeName}`.trim();
-};
-
-const cleanText = (text: string | undefined): string => {
-    if (!text) return "";
-
-    let cleanedText = text
-        .replace(/\bundefined\b/gi, '') // More precise "undefined" removal
-        .replace(/\s+/g, ' ')
-        .trim();
-
-    // Loop to remove all consecutive duplicates, e.g., "go go go" becomes "go".
-    const duplicateWordRegex = /\b(\w+)\s+\1\b/gi;
-    while (duplicateWordRegex.test(cleanedText)) {
-        cleanedText = cleanedText.replace(duplicateWordRegex, '$1');
-    }
+    {/* Magical Water Orb */}
+    <circle cx="80" cy="85" r="60" fill="url(#bowl-water)" />
     
-    return cleanedText;
-};
+    <g className="babelfischi-bubbles" fill="#ffffff">
+      <circle cx="106" cy="85" r="2" />
+      <circle cx="109" cy="76" r="3" />
+      <circle cx="105" cy="68" r="1.8" />
+      <circle cx="110" cy="58" r="3.5" />
+    </g>
 
-const AnimatedDisclaimerHeader: React.FC<{ langA: Language, langB: Language }> = ({ langA, langB }) => {
-    const [visibleLang, setVisibleLang] = useState<'A' | 'B'>('A');
+    <g className="babelfischi-fish" filter="url(#fish-glow)">
+      <path className="babelfischi-tail" d="M48 88 C 30 75, 25 80, 20 68 C 30 90, 25 102, 20 115 C 32 105, 38 108, 48 98 Z" fill="url(#fish-fin)" />
+      <path className="babelfischi-fin-top" d="M65 76 C 75 58, 88 62, 98 78 Z" fill="url(#fish-fin)" opacity="0.9" />
+      <path className="babelfischi-fin-bottom" d="M72 105 C 82 120, 88 116, 95 102 Z" fill="url(#fish-fin)" opacity="0.9" />
+      <path d="M48 92 C 48 68, 80 62, 102 74 C 120 82, 125 96, 118 105 C 108 118, 80 118, 48 92 Z" fill="url(#fish-body)" />
+      
+      <circle cx="104" cy="85" r="4" fill="#1f1400" />
+      <circle cx="105.5" cy="83.5" r="1.5" fill="#ffffff" />
+      <circle cx="95" cy="95" r="7" fill="url(#cheek-glow)" />
 
-    useEffect(() => {
-        setVisibleLang('A');
-        const intervalId = setInterval(() => {
-            setVisibleLang(prev => (prev === 'A' ? 'B' : 'A'));
-        }, 4000); // Cycle every 4 seconds
+      <path d="M110 96 C 114 98, 116 97, 118 94" fill="none" stroke="#7c3aed" strokeWidth="2.5" strokeLinecap="round" />
+      
+      <path className="babelfischi-marking" d="M62 86 C 68 92, 72 86, 78 96" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" opacity="0.8" />
+      <path className="babelfischi-marking" d="M78 82 C 84 88, 88 82, 94 92" fill="none" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" opacity="0.8" />
+      
+      <path className="babelfischi-fin-side" d="M82 92 C 72 98, 65 96, 75 88 Z" fill="url(#fish-fin)" opacity="0.95" />
+    </g>
 
-        return () => clearInterval(intervalId);
-    }, [langA, langB]);
+    {/* Orb Front Reflections */}
+    <circle cx="80" cy="85" r="60" fill="none" stroke="#ffffff" strokeWidth="4" opacity="0.3" />
+    <circle cx="80" cy="85" r="60" fill="url(#glass-reflection)" />
+  </svg>
+);
 
-    const textA = disclaimerPrompts[langA] || "AI-powered translation";
-    const textB = disclaimerPrompts[langB] || disclaimerPrompts[Language.English];
+function mergeTranscript(previous: string, nextChunk: string): string {
+  const next = nextChunk.trim();
+  if (!next) return previous;
+  if (!previous) return next;
 
-    return (
-        <div className="relative h-5 w-full text-center text-xs text-gray-500"> {/* Container for positioning */}
-            <div 
-                className="absolute inset-0 flex items-center justify-center transition-opacity duration-700 ease-in-out" 
-                style={{ opacity: visibleLang === 'A' ? 1 : 0 }}
-                aria-hidden={visibleLang !== 'A'}
-            >
-                <span>{textA}</span>
-            </div>
-            <div 
-                className="absolute inset-0 flex items-center justify-center transition-opacity duration-700 ease-in-out" 
-                style={{ opacity: visibleLang === 'B' ? 1 : 0 }}
-                aria-hidden={visibleLang !== 'B'}
-            >
-                <span>{textB}</span>
-            </div>
-        </div>
-    );
-};
+  const normalizedPrevious = previous.trim();
+  if (next === normalizedPrevious) return previous;
+  if (next.startsWith(normalizedPrevious)) return next;
 
-const AnimatedInstructionalHeader: React.FC<{ langA: Language, langB: Language }> = ({ langA, langB }) => {
-    const [visibleLang, setVisibleLang] = useState<'A' | 'B'>('A');
+  const lowerPrevious = normalizedPrevious.toLowerCase();
+  const lowerNext = next.toLowerCase();
+  if (lowerPrevious.endsWith(lowerNext)) return previous;
 
-    useEffect(() => {
-        setVisibleLang('A');
-        const intervalId = setInterval(() => {
-            setVisibleLang(prev => (prev === 'A' ? 'B' : 'A'));
-        }, 4000); // Cycle every 4 seconds
-
-        return () => clearInterval(intervalId);
-    }, [langA, langB]);
-
-    const textA = instructionalPrompts[langA] || "Select languages & speak to translate";
-    const textB = instructionalPrompts[langB] || instructionalPrompts[Language.English];
-
-    return (
-        <div className="relative h-6 w-full text-center"> {/* Container for positioning */}
-            <div 
-                className="absolute inset-0 flex items-center justify-center transition-opacity duration-700 ease-in-out" 
-                style={{ opacity: visibleLang === 'A' ? 1 : 0 }}
-                aria-hidden={visibleLang !== 'A'}
-            >
-                <span>{textA}</span>
-            </div>
-            <div 
-                className="absolute inset-0 flex items-center justify-center transition-opacity duration-700 ease-in-out" 
-                style={{ opacity: visibleLang === 'B' ? 1 : 0 }}
-                aria-hidden={visibleLang !== 'B'}
-            >
-                <span>{textB}</span>
-            </div>
-        </div>
-    );
-};
-
-const AppHeader: React.FC<{
-  appState: AppState;
-  languages: LanguagePair;
-  conversationIsEmpty: boolean;
-}> = ({ appState, languages, conversationIsEmpty }) => {
-    const lang = languages.langA; // Use primary for non-idle states
-
-    if (appState === AppState.IDLE && conversationIsEmpty) {
-        return (
-            <div className="flex flex-col items-center space-y-1">
-                <AnimatedDisclaimerHeader langA={languages.langA} langB={languages.langB} />
-                <AnimatedInstructionalHeader langA={languages.langA} langB={languages.langB} />
-            </div>
-        );
-    }
-
-    switch (appState) {
-        case AppState.LISTENING:
-            return <div className="relative h-6 flex items-center justify-center"><span>{lang === Language.German ? "Höre zu..." : "Listening..."}</span></div>;
-        case AppState.PROCESSING:
-            return <div className="relative h-6 flex items-center justify-center"><span>{lang === Language.German ? "Wird übersetzt..." : "Translating..."}</span></div>;
-        case AppState.IDLE:
-        default:
-            return <AnimatedInstructionalHeader langA={languages.langA} langB={languages.langB} />;
-    }
-};
-
+  return `${normalizedPrevious} ${next}`.replace(/\s+/g, ' ').trim();
+}
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
-  const [languages, setLanguages] = useState<LanguagePair>({ langA: Language.German, langB: Language.English });
-  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
+  const [targetLanguageCode, setTargetLanguageCode] = useState(DEFAULT_TARGET_LANGUAGE_CODE);
+  const [echoTargetLanguage, setEchoTargetLanguage] = useState(false);
   const [autoPlayback, setAutoPlayback] = useState(true);
+  const [conversation, setConversation] = useState<ConversationBubbleMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [langToChange, setLangToChange] = useState<'langA' | 'langB' | null>(null);
-  const [streamingMessageId, setStreamingMessageId] = useState<number | null>(null);
-  const aiRef = useRef<GoogleGenAI | null>(null);
-  const prevLangB = useRef(languages.langB);
+  const activeMessageIdRef = useRef<number | null>(null);
   const scrollContainerRef = useRef<HTMLElement>(null);
-  const [useVertexAI, setUseVertexAI] = useState(false);
-  const [apiStatusMessage, setApiStatusMessage] = useState('');
-  const [vertexRegion, setVertexRegion] = useState<VertexRegion>('europe-west4');
-  
-  useEffect(() => {
-    if (prevLangB.current !== languages.langB) {
-      setConversation(prev => {
-        if (prev.length > 0) {
-          const newMessage: SystemMessage = {
-            id: Date.now(),
-            type: 'SYSTEM',
-            text: `Translation language switched to ${getLocalizedDisplayName(languages.langB)}`,
-          };
-          console.log(`[SYSTEM] Language switched to: ${languages.langB}`);
-          return [...prev, newMessage];
-        }
-        return prev;
-      });
-    }
-    prevLangB.current = languages.langB;
-  }, [languages.langB]);
+  const liveClientRef = useRef<LiveTranslateClient | null>(null);
+  const playbackQueueRef = useRef<PcmAudioQueue | null>(null);
+
+  const targetLanguage = useMemo(() => getLanguageByCode(targetLanguageCode), [targetLanguageCode]);
+  const { amplitude, start: startMicrophone, stop: stopMicrophone } = useLiveMicrophone();
+
+  const closeLiveClient = useCallback(() => {
+    liveClientRef.current?.close();
+  }, []);
 
   useEffect(() => {
-     console.log(`[STATE] App state changed to: %c${appState}`, 'font-weight: bold;');
-  }, [appState]);
+    const playbackQueue = new PcmAudioQueue();
+    playbackQueueRef.current = playbackQueue;
+    return () => {
+      closeLiveClient();
+      stopMicrophone();
+      playbackQueue.close();
+    };
+  }, [closeLiveClient, stopMicrophone]);
 
   useEffect(() => {
-    // Smoothly scroll to the bottom when a new message is added,
-    // or when a streaming message is finalized.
-    const scrollNode = scrollContainerRef.current;
-    if (scrollNode) {
-      // Use a short timeout to allow the DOM to update its layout,
-      // ensuring we scroll to the very bottom after content changes.
-      const timer = setTimeout(() => {
-        scrollNode.scrollTo({
-          top: scrollNode.scrollHeight,
-          behavior: 'smooth',
-        });
-      }, 100);
-      
-      return () => clearTimeout(timer); // Cleanup the timer
-    }
-  }, [conversation.length, streamingMessageId]);
+    const node = scrollContainerRef.current;
+    if (!node) return;
 
-  
-  useEffect(() => {
-    try {
-        aiRef.current = null; // Reset before initializing
-        if (useVertexAI) {
-            const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-            if (projectId) {
-                aiRef.current = new GoogleGenAI({
-                    vertexai: true,
-                    project: projectId,
-                    location: vertexRegion,
-                });
-                console.info(`[INIT] Vertex AI client initialized successfully for project: ${projectId}, region: ${vertexRegion}`);
-                setApiStatusMessage(`Connected to ${vertexRegion}`);
-            } else {
-                console.error("[INIT] GOOGLE_CLOUD_PROJECT environment variable not set for Vertex AI mode.");
-                setApiStatusMessage('Project ID missing');
-            }
-        } else {
-            if (process.env.API_KEY) {
-                aiRef.current = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                console.info("[INIT] Gemini API client initialized successfully.");
-                setApiStatusMessage('Connected');
-            } else {
-                console.error("[INIT] API_KEY environment variable not set for Gemini API mode.");
-                setApiStatusMessage('API Key missing');
-            }
-        }
-    } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        console.error(`[INIT] Failed to initialize AI client:`, message);
-        setApiStatusMessage('Initialization failed');
-    }
-  }, [useVertexAI, vertexRegion]);
-  
- const handleFinishedRecording = useCallback(async (audioBlob: Blob, duration: number) => {
-    setAppState(AppState.PROCESSING);
+    const timer = window.setTimeout(() => {
+      node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+    }, 80);
+
+    return () => window.clearTimeout(timer);
+  }, [conversation.length]);
+
+  const stopLiveSession = useCallback(() => {
+    const activeMessageId = activeMessageIdRef.current;
+    liveClientRef.current?.close();
+    liveClientRef.current = null;
+    stopMicrophone();
+    playbackQueueRef.current?.stop();
+
+    setConversation((current) =>
+      current.map((message) =>
+        message.type === 'CONVERSATION' && message.id === activeMessageId
+          ? { ...message, isLive: false }
+          : message
+      )
+    );
+
+    activeMessageIdRef.current = null;
+    setAppState(AppState.IDLE);
+  }, [stopMicrophone]);
+
+  const startLiveSession = useCallback(async () => {
     setError(null);
-    if (!aiRef.current) {
-        const errorMsg = "Gemini AI not initialized. Please check API configuration.";
-        setError(errorMsg);
-        console.error(`[PROCESS] ${errorMsg}`);
-        setAppState(AppState.IDLE);
-        return;
-    }
+    setAppState(AppState.CONNECTING);
 
     const messageId = Date.now();
-    
-    // Create an initial processing bubble (centered) for immediate feedback.
-    const initialBubble: ConversationBubbleMessage = {
-        id: messageId,
-        type: 'CONVERSATION',
-        direction: MessageDirection.RIGHT,
-        sourceLang: '',
-        targetLang: '',
-        transcription: '',
-        translation: '',
-        audioDuration: duration,
+    const initialMessage: ConversationBubbleMessage = {
+      id: messageId,
+      type: 'CONVERSATION',
+      direction: MessageDirection.RIGHT,
+      sourceLang: undefined,
+      targetLang: targetLanguage.germanName,
+      transcription: '',
+      translation: '',
+      audioChunks: [],
+      isLive: true,
     };
 
-    setConversation(prev => [...prev, initialBubble]);
-    setStreamingMessageId(messageId);
+    setConversation([initialMessage]);
+    activeMessageIdRef.current = messageId;
+
+    const client = new LiveTranslateClient();
+    liveClientRef.current = client;
 
     try {
-        let finalResult: Partial<GeminiAsrResponse> = {};
-
-        await transcribeAndTranslateStream(
-            aiRef.current, 
-            audioBlob, 
-            languages.langA, 
-            languages.langB,
-            (chunk) => {
-                console.log("[STREAM] Received chunk:", chunk);
-                finalResult = { ...finalResult, ...chunk };
-
-                const sourceLanguage = finalResult.sourceLanguage || languages.langA;
-                const direction = sourceLanguage === languages.langB ? MessageDirection.LEFT : MessageDirection.RIGHT;
-                const targetLang = sourceLanguage === languages.langA ? languages.langB : languages.langA;
-                
-                setConversation(prev => prev.map(msg => 
-                    msg.id === messageId && msg.type === 'CONVERSATION' 
-                    ? { 
-                        ...msg, 
-                        direction,
-                        sourceLang: sourceLanguage,
-                        targetLang,
-                        transcription: finalResult.transcription || '',
-                        translation: finalResult.translation || ''
-                        } 
-                    : msg
-                ));
-            }
-        );
-        
-        console.log("[PROCESS] Streaming finished. Final result:", finalResult);
-        setStreamingMessageId(null);
-        
-        // Clean up the final text just in case the model includes duplicates despite the prompt.
-        const cleanedTranscription = cleanText(finalResult.transcription);
-        const cleanedTranslation = cleanText(finalResult.translation);
-
-        setConversation(prev => prev.map(msg =>
-            msg.id === messageId && msg.type === 'CONVERSATION'
-                ? { ...msg, transcription: cleanedTranscription, translation: cleanedTranslation }
-                : msg
-        ));
-
-        if (autoPlayback && cleanedTranslation) {
-            const finalSourceLang = finalResult.sourceLanguage || languages.langA;
-            const finalTargetLang = finalSourceLang === languages.langA ? languages.langB : languages.langA;
-
-            console.info("[PROCESS] Auto-playback enabled. Generating speech...");
-
-            setConversation(prev =>
-                prev.map(msg =>
-                msg.id === messageId && msg.type === 'CONVERSATION'
-                    ? { ...msg, isGeneratingAudio: true }
-                    : msg
-                )
+      await client.start({
+        targetLanguageCode,
+        echoTargetLanguage,
+        callbacks: {
+          onOpen: () => {
+            setAppState(AppState.LIVE);
+          },
+          onInputTranscript: (text, languageCode) => {
+            setConversation((current) =>
+              current.map((message) =>
+                message.type === 'CONVERSATION' && message.id === messageId
+                  ? {
+                      ...message,
+                      sourceLang: languageCode ? getGermanLanguageNameByCode(languageCode) : message.sourceLang,
+                      transcription: mergeTranscript(message.transcription, text),
+                    }
+                  : message
+              )
+            );
+          },
+          onOutputTranscript: (text) => {
+            setConversation((current) =>
+              current.map((message) =>
+                message.type === 'CONVERSATION' && message.id === messageId
+                  ? { ...message, translation: mergeTranscript(message.translation, text) }
+                  : message
+              )
+            );
+          },
+          onAudioChunk: (base64Pcm) => {
+            setConversation((current) =>
+              current.map((message) =>
+                message.type === 'CONVERSATION' && message.id === messageId
+                  ? { ...message, audioChunks: [...message.audioChunks, base64Pcm] }
+                  : message
+              )
             );
 
-            generateSpeech(aiRef.current, cleanedTranslation, finalTargetLang)
-            .then(audioData => {
-                console.log("[PROCESS] Speech generated. Updating message with audio data.");
-                setConversation(prev => prev.map(msg => 
-                msg.id === messageId && msg.type === 'CONVERSATION' ? { ...msg, base64Audio: audioData, isGeneratingAudio: false } : msg
-                ));
-                playPcmAudio(audioData);
-            })
-            .catch(e => {
-                console.error("[PROCESS] Failed to generate or play speech.", e);
-                setError("Die Übersetzung konnte nicht wiedergegeben werden.");
-                setConversation(prev =>
-                    prev.map(msg =>
-                    msg.id === messageId && msg.type === 'CONVERSATION'
-                        ? { ...msg, isGeneratingAudio: false }
-                        : msg
-                    )
-                );
-            });
-        }
+            if (autoPlayback) {
+              playbackQueueRef.current?.enqueue(base64Pcm);
+            }
+          },
+          onClose: (reason) => {
+            if (reason && reason !== 'Turn complete') {
+              setError(reason);
+            }
+          },
+          onError: (message) => {
+            setError(message);
+            stopLiveSession();
+          },
+        },
+      });
 
-    } catch (e) {
-        console.error("[PROCESS] Error during stream processing:", e);
-        setError("Entschuldigung, das habe ich nicht verstanden. Bitte erneut versuchen.");
-        setConversation(prev => prev.filter(msg => msg.id !== messageId));
-        setStreamingMessageId(null);
-    } finally {
-        setAppState(AppState.IDLE);
+      await startMicrophone((base64Pcm) => {
+        client.sendPcmChunk(base64Pcm);
+      });
+    } catch (event) {
+      const message = event instanceof Error ? event.message : String(event);
+      setError(message);
+      client.close();
+      setConversation((current) => current.filter((item) => item.id !== messageId));
+      activeMessageIdRef.current = null;
+      setAppState(AppState.IDLE);
     }
-}, [autoPlayback, languages]);
+  }, [autoPlayback, echoTargetLanguage, startMicrophone, stopLiveSession, targetLanguage.germanName, targetLanguageCode]);
 
-
-  const { isRecording, amplitude, startRecording, stopRecording } = useAudioRecorder(handleFinishedRecording);
-  
   const handleMicToggle = () => {
-    if (!aiRef.current) {
-        setError(useVertexAI ? "Vertex AI client not initialized. Check GOOGLE_CLOUD_PROJECT." : "Gemini API client not initialized. Check API_KEY.");
-        return;
+    if (appState === AppState.LIVE || appState === AppState.CONNECTING) {
+      stopLiveSession();
+      return;
     }
-      
-    if (appState === AppState.LISTENING) {
-      console.log("[CONTROL] Mic toggled: Stopping recording.");
-      stopRecording();
-    } else if (appState === AppState.IDLE) {
-      console.log("[CONTROL] Mic toggled: Starting recording.");
-      setError(null);
-      startRecording();
-      setAppState(AppState.LISTENING);
+
+    startLiveSession();
+  };
+
+  const handleGoHome = () => {
+    if (appState === AppState.LIVE || appState === AppState.CONNECTING) {
+      stopLiveSession();
     }
-  };
-  
-  const handleOpenModal = (langKey: 'langA' | 'langB') => {
-    setLangToChange(langKey);
-    setIsModalOpen(true);
-  };
-
-  const handleLanguageChange = (lang: Language, keyToChange: 'langA' | 'langB') => {
-    setLanguages(prev => {
-        const otherKey = keyToChange === 'langA' ? 'langB' : 'langA';
-        const otherLang = prev[otherKey];
-
-        if (otherLang === lang) {
-            // Swap if the selected language is the same as the other language
-            return {
-                ...prev,
-                [keyToChange]: lang,
-                [otherKey]: prev[keyToChange]
-            };
-        } else {
-            // Otherwise, just update the selected language
-            return { ...prev, [keyToChange]: lang };
-        }
-    });
-  };
-
-  const handleSelectLanguageFromModal = (lang: Language) => {
-    if (langToChange) {
-        handleLanguageChange(lang, langToChange);
-    }
-    setIsModalOpen(false);
-    setLangToChange(null);
-  };
-
-  const handleQuickSelect = (lang: Language) => {
-      const keyToChange = 'langB';
-      handleLanguageChange(lang, keyToChange);
-  };
-
-  const handleClearConversation = () => {
-    console.warn("[CONTROL] Clearing conversation history.");
     setConversation([]);
-    stopRecording();
     setAppState(AppState.IDLE);
+    setError(null);
   };
 
-  const handleApiToggle = () => {
-      const switchingToVertex = !useVertexAI;
-      setUseVertexAI(switchingToVertex);
-      if (conversation.length > 0) {
-        const newMessage: SystemMessage = {
-            id: Date.now(),
-            type: 'SYSTEM',
-            text: `Switched to ${switchingToVertex ? `Vertex AI (${vertexRegion})` : 'Gemini API'}`,
-        };
-        setConversation(prev => [...prev, newMessage]);
-      }
-      console.log(`[CONTROL] Switched API to: ${switchingToVertex ? `Vertex AI (${vertexRegion})` : 'Gemini API'}`);
+  const handleTargetLanguageChange = (code: string) => {
+    setTargetLanguageCode(code);
   };
 
-  const handleRegionChange = (newRegion: VertexRegion) => {
-    setVertexRegion(newRegion);
-    if (conversation.length > 0) {
-        const newMessage: SystemMessage = {
-            id: Date.now(),
-            type: 'SYSTEM',
-            text: `Switched Vertex AI region to ${newRegion}`,
-        };
-        setConversation(prev => [...prev, newMessage]);
-    }
-    console.log(`[CONTROL] Switched Vertex AI region to: ${newRegion}`);
+  const handleReplay = (message: ConversationBubbleMessage) => {
+    playbackQueueRef.current?.replay(message.audioChunks);
   };
 
-  const handleReplayAudio = async (message: ConversationBubbleMessage) => {
-    if (!aiRef.current || !message.targetLang || !message.translation) return;
-    console.groupCollapsed(`[CONTROL] Replaying audio for message ID: ${message.id}`);
-    
-    if (message.base64Audio) {
-      console.log("Playing existing audio data.");
-      await playPcmAudio(message.base64Audio);
-    } else {
-      try {
-        console.log("No existing audio. Generating new speech...");
-        const audioData = await generateSpeech(aiRef.current, message.translation, message.targetLang);
-        console.log("Speech generated. Updating message and playing audio.");
-        setConversation(conv => conv.map(m => m.id === message.id && m.type === 'CONVERSATION' ? {...m, base64Audio: audioData} : m));
-        await playPcmAudio(audioData);
-      } catch (e) {
-        console.error("Failed to generate speech for replay", e);
-        setError("Audio konnte nicht abgespielt werden.");
-      }
-    }
-    console.groupEnd();
-  };
-
-  const QuickSelectButton: React.FC<{ lang: Language, onClick: (lang: Language) => void }> = ({ lang, onClick }) => (
-    <button 
-      onClick={() => onClick(lang)} 
-      className="flex items-center space-x-4 text-left bg-white text-[#464646] px-4 py-3 rounded-2xl w-full shadow-sm hover:bg-gray-50 hover:scale-105 active:scale-95 transition-all duration-200"
-      aria-label={`Quick select ${getLocalizedDisplayName(lang)}`}
-    >
-        <HistoryIcon />
-        <span className="font-medium">{getLocalizedDisplayName(lang)}</span>
-    </button>
-  );
-
-  const quickSelectLanguages = [Language.Polish, Language.Turkish, Language.Romanian];
-  const isApiError = apiStatusMessage.includes('missing') || apiStatusMessage.includes('failed');
+  const liveCaption = appState === AppState.CONNECTING
+    ? 'Verbindung wird aufgebaut...'
+    : appState === AppState.LIVE
+      ? `Sag etwas. Dein Babelfischi spricht ${targetLanguage.germanName}.`
+      : 'Wähle die Sprache aus, die herauskommen soll.';
 
   return (
-    <>
-      <div className="flex flex-col h-full font-sans bg-[#FDFBF6] text-[#464646]">
-        <header className="relative flex items-center justify-between p-2 md:px-4 shrink-0 min-h-16">
-           <button 
-             onClick={handleClearConversation} 
-             className={`p-2 rounded-full hover:bg-gray-200 hover:scale-110 active:scale-95 transition-all duration-200 ${conversation.length > 0 ? 'visible' : 'invisible'}`}
-             aria-label="Clear conversation"
-           >
-            <BackIcon />
-           </button>
-           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full px-12 pointer-events-none">
-            <h1 className="text-sm font-medium tracking-wide text-center">
-              <AppHeader 
-                  appState={appState}
-                  languages={languages}
-                  conversationIsEmpty={conversation.length === 0}
-              />
-            </h1>
-           </div>
-          <div className="flex items-center">
-              {/* ApiToggle is now moved to the idle screen content */}
-          </div>
-        </header>
+    <div className="flex h-[100dvh] flex-col bg-[#faf8f3] text-[#373737]">
+      <header className="grid min-h-16 shrink-0 place-items-center px-4 py-2">
+        <div className="grid w-full gap-0.5 text-center">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#c3002d]">Dein Babelfischi</p>
+          <p className="truncate text-sm font-medium text-slate-600">{liveCaption}</p>
+        </div>
+      </header>
 
-        <main ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 hide-scrollbar">
-          {conversation.length === 0 && appState === AppState.IDLE && (
-             <div className="flex flex-col justify-between h-full text-center">
-                {/* Top Group */}
-                <div className="pt-2 md:pt-6">
-                    <div className="animate-fade-in-up" style={{ animationDuration: '0.5s' }}>
-                      <h2 className="text-4xl md:text-5xl font-normal text-[#464646]">{listeningPrompts[languages.langA] || "Translate..."}</h2>
-                      <p className="text-4xl md:text-5xl font-normal text-gray-400">{listeningPrompts[languages.langB] || "Translate..."}</p>
-                    </div>
-                      <div className="w-full max-w-xs mx-auto mt-10 md:mt-12 space-y-3">
-                        {quickSelectLanguages.map((lang, index) => (
-                          <div key={lang} className="animate-fade-in-up" style={{ animationDelay: `${150 + index * 100}ms`, animationFillMode: 'backwards' }}>
-                            <QuickSelectButton lang={lang} onClick={handleQuickSelect} />
-                          </div>
-                        ))}
-                      </div>
-                </div>
-                
-                {/* Bottom Group */}
-                <div className="pb-2">
-                  <div className="w-full max-w-sm mx-auto mt-8 animate-fade-in-up" style={{ animationDelay: '450ms', animationFillMode: 'backwards' }}>
-                      <div className="p-4 bg-white/60 backdrop-blur-sm rounded-2xl border border-gray-200/80 shadow-sm space-y-3">
-                          <div className="flex justify-center items-center gap-2">
-                              <ApiToggle useVertexAI={useVertexAI} onToggle={handleApiToggle} />
-                              {useVertexAI && (
-                                <RegionSelector 
-                                    currentRegion={vertexRegion} 
-                                    onRegionChange={handleRegionChange} 
-                                />
-                              )}
-                          </div>
-                          <p className="text-xs text-gray-600 leading-relaxed text-center">
-                              <span className={`font-medium ${isApiError ? 'text-[#c3002d]' : ''}`}>
-                                  Status: {apiStatusMessage}
-                              </span>
-                              <br />
-                              {useVertexAI
-                                  ? "Vertex AI offers enterprise-grade features and Google Cloud integration."
-                                  : "Gemini API provides fast, direct access for development and prototyping."
-                              }
-                          </p>
-                      </div>
-                  </div>
-                </div>
-             </div>
-          )}
-          {conversation.map((msg) => {
-            if (msg.type === 'SYSTEM') {
-              return <SystemMessageBubble key={msg.id} message={msg} />;
-            }
-            return <ConversationBubble key={msg.id} message={msg} onReplay={handleReplayAudio} isStreaming={streamingMessageId === msg.id} languages={languages} />;
-          })}
-          <div className="h-4" />
-          {error && <div className="fixed bottom-28 left-1/2 -translate-x-1/2 text-center text-white p-3 bg-[#c3002d] rounded-xl shadow-lg animate-fade-in-up">{error}</div>}
-        </main>
+      <main ref={scrollContainerRef} className="hide-scrollbar flex-1 overflow-y-auto px-4 pb-4">
+        {conversation.length === 0 && appState === AppState.IDLE ? (
+          <section className="mx-auto flex w-full max-w-2xl flex-col items-center px-2 pt-6 pb-8 text-center">
+            <div className="grid max-w-xl gap-4 animate-fade-in-up">
+              <div className="mx-auto flex items-center justify-center">
+                <BabelfischiLogo />
+              </div>
+              <div>
+                <h1 className="text-5xl font-semibold tracking-normal text-[#373737] md:text-6xl">
+                  Dein Babelfischi.
+                </h1>
+                <p className="mx-auto mt-4 max-w-md text-base leading-7 text-slate-500">
+                  Wähle unten die Sprache aus, drück Starten und rede einfach los. Dein Babelfischi hört zu und spricht die Übersetzung für dich.
+                </p>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center gap-6 px-2 py-8">
+            {conversation.map((message) => (
+              <ConversationBubble key={message.id} message={message} onReplay={handleReplay} />
+            ))}
+          </section>
+        )}
+      </main>
 
-        <BottomControls 
-          appState={appState}
-          amplitude={amplitude}
-          languages={languages}
-          autoPlayback={autoPlayback}
-          onMicToggle={handleMicToggle}
-          onLanguageChange={handleOpenModal}
-          onAutoPlaybackToggle={() => setAutoPlayback(p => !p)}
-        />
-      </div>
-      <LanguageSelectionModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSelect={handleSelectLanguageFromModal}
+      {error && (
+        <div className="fixed bottom-32 left-1/2 z-40 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl bg-[#c3002d] px-4 py-3 text-center text-sm font-medium text-white shadow-xl animate-fade-in-up">
+          {error}
+        </div>
+      )}
+
+      <BottomControls
+        appState={appState}
+        amplitude={amplitude}
+        targetLanguage={targetLanguage}
+        echoTargetLanguage={echoTargetLanguage}
+        autoPlayback={autoPlayback}
+        hasConversation={conversation.length > 0}
+        onTargetLanguageChange={handleTargetLanguageChange}
+        onEchoTargetLanguageToggle={() => setEchoTargetLanguage((value) => !value)}
+        onAutoPlaybackToggle={() => setAutoPlayback((value) => !value)}
+        onMicToggle={handleMicToggle}
+        onGoHome={handleGoHome}
       />
-    </>
+    </div>
   );
 };
-
-const LanguageSelectionModal: React.FC<{isOpen: boolean, onClose: () => void, onSelect: (lang: Language) => void}> = ({ isOpen, onClose, onSelect }) => {
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-modal-bg-fade-in" onClick={onClose}>
-            <div className="bg-white rounded-3xl p-4 w-full max-w-sm m-4 flex flex-col relative animate-modal-content-pop-in" onClick={(e) => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-4 px-2">
-                    <h3 className="text-xl font-medium text-[#464646]">Sprache auswählen</h3>
-                    <button 
-                      onClick={onClose} 
-                      className="p-1 rounded-full text-gray-400 hover:bg-gray-200 hover:text-gray-600 hover:scale-110 active:scale-95 transition-all duration-200"
-                      aria-label="Close modal"
-                    >
-                        <CloseIcon />
-                    </button>
-                </div>
-                <div className="max-h-80 overflow-y-auto hide-scrollbar scroll-fader pr-2">
-                    {Object.values(Language).map(lang => (
-                        <button
-                            key={lang}
-                            onClick={() => onSelect(lang)}
-                            className="w-full p-3 text-left rounded-lg text-[#464646] hover:bg-sky-100 hover:scale-102 active:scale-98 transition-all duration-150"
-                            aria-label={`Select ${getLocalizedDisplayName(lang)}`}
-                        >
-                            {getLocalizedDisplayName(lang)}
-                        </button>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const SystemMessageBubble: React.FC<{ message: SystemMessage }> = ({ message }) => (
-    <div className="flex justify-center my-2 animate-fade-in-up">
-        <div className="text-xs text-slate-500 bg-slate-100 rounded-full px-3 py-1">
-            {message.text}
-        </div>
-    </div>
-);
 
 export default App;

@@ -1,6 +1,6 @@
 {
-  "name": "Geminus Translator",
-  "description": "A real-time bilingual conversation app powered by Gemini. Speak into your microphone and get instant audio translations, enabling seamless communication across languages.",
+  "name": "Dein Babelfischi",
+  "description": "Eine einfache Live-Übersetzungs-App: Sprache wählen, Start drücken, losreden und die Übersetzung hören.",
   "requestFramePermissions": [
     "microphone"
   ]

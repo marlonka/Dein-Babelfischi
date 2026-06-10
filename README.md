@@ -1,117 +1,164 @@
-# Geminus Translator
+# Dein Babelfischi
 
-[https://github.com/marlonka/Geminus-Translator](https://github.com/marlonka/Geminus-Translator)
+Dein Babelfischi is a real-time speech translation app built with React, Vite, Node, and the Google Gen AI SDK. It uses Gemini 3.5 Live Translate to listen to spoken audio, automatically detect the input language, and stream translated speech into one selected target language.
 
-Geminus Translator is a real-time, voice-driven bilingual conversation app powered by the Google Gemini API. It allows two people speaking different languages to communicate seamlessly. Simply select your languages, press start, and speak into your microphone. The app provides instant transcription and audio translation, displaying the conversation in a clean, chat-like interface.
+## What changed
 
----
+- You only choose the target language.
+- The model detects the input language automatically.
+- `Echo target language` controls whether speech already spoken in the target language is repeated back.
+- Secrets stay on the local Node backend. The browser only receives short-lived Live API tokens.
 
-## ✨ Features
+## Requirements
 
-*   **Real-Time Streaming Translation**: Get instant voice-to-text transcription and text-to-text translation that appear progressively as you speak, powered by Gemini's streaming capabilities.
-*   **Dual API Support (Gemini & Vertex AI)**: Easily switch between the standard Gemini API and the enterprise-grade Vertex AI API with a sleek toggle. This allows for flexible testing and deployment on Google Cloud.
-*   **Voice-to-Voice Conversation**: The translated text is automatically converted back to speech and played aloud for a natural conversational flow.
-*   **Automatic Language Detection**: The app intelligently detects which of the two selected languages is being spoken and translates accordingly.
-*   **Voice Activity Detection (VAD)**: The microphone automatically stops recording after a pause in speech, streamlining the user experience.
-*   **Multi-Language Support**: Supports 23 languages for broad usability.
-*   **Interactive UI**: A modern, responsive interface built with React and Tailwind CSS, featuring smooth animations and clear visual feedback for different app states (listening, processing, idle).
-*   **Audio Controls**: Easily toggle auto-playback of translated audio.
-*   **Conversation History**: View the full conversation history and replay audio for any message.
+- Node.js 20 or newer
+- npm
+- A Gemini API key, or Google Cloud credentials for Gemini Enterprise Agent Platform
+- A browser with microphone access
 
----
+## Quick Start With a Gemini API Key
 
-## 🚀 How It Works
+1. Install dependencies:
 
-The application leverages the power of Gemini and modern web APIs to create a seamless translation experience:
-
-1.  **API Selection**: The user can choose between the Gemini Developer API or the Vertex AI API via a toggle in the UI. The application dynamically initializes the `@google/genai` client with the appropriate configuration for the selected service.
-2.  **Audio Capture**: The app uses the `MediaRecorder` Web API to capture audio from the user's microphone in `webm/opus` format. A custom React hook, `useAudioRecorder`, manages the recording state and implements Voice Activity Detection (VAD) to automatically stop recording when the user finishes speaking.
-3.  **Streaming Transcription & Translation**: The captured audio `Blob` is converted to a Base64 string and sent to the **`gemini-2.5-flash`** model using its streaming (`generateContentStream`) capability. A carefully crafted system instruction prompts the model to perform three tasks:
-    *   Identify which of the two selected languages was spoken.
-    *   Transcribe the spoken audio into text.
-    *   Translate the transcription into the other selected language.
-    *   Instead of waiting for the full response, the model streams the result in a custom tagged format (e.g., `[LANG]...[/LANG][TRANSCRIPTION]...[/TRANSLATION]`). The frontend parses this stream as it arrives, updating the UI in real-time for a responsive feel.
-4.  **Speech Synthesis (TTS)**: The final translated text is sent to the **`gemini-2.5-flash-preview-tts`** model to generate high-quality, natural-sounding speech.
-5.  **Audio Playback**: The TTS model returns the audio as raw PCM data encoded in Base64. A utility function decodes this data into an `AudioBuffer` and plays it back using the Web Audio API for low-latency playback.
-6.  **Frontend Rendering**: The entire user interface is built with **React**. The application state (e.g., `IDLE`, `LISTENING`, `PROCESSING`) is managed using React hooks (`useState`, `useCallback`), and the conversation is rendered dynamically, with transcription and translation text appearing progressively as the stream from Gemini is processed.
-
----
-
-## 🛠️ Tech Stack
-
-*   **AI Models**:
-    *   **Google Gemini 2.5 Flash**: For combined, streaming audio transcription, language detection, and translation.
-    *   **Google Gemini 2.5 Flash TTS**: For text-to-speech synthesis.
-*   **SDK**: [@google/genai](https://www.npmjs.com/package/@google/genai) (for both Gemini and Vertex AI)
-*   **Frontend Framework**: [React](https://reactjs.org/)
-*   **Styling**: [Tailwind CSS](https://tailwindcss.com/)
-*   **Language**: [TypeScript](https://www.typescriptlang.org/)
-*   **Core Web APIs**:
-    *   `navigator.mediaDevices.getUserMedia`
-    *   `MediaRecorder` API
-    *   Web Audio API (`AudioContext`)
-
----
-
-## 📂 Project Structure
-
+```bash
+npm install
 ```
+
+2. Create your local environment file:
+
+```bash
+cp .env.example .env
+```
+
+On Windows PowerShell, use:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+3. Open `.env` and paste your key:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+GOOGLE_GENAI_USE_ENTERPRISE=False
+```
+
+4. Start the app:
+
+```bash
+npm run dev
+```
+
+5. Open:
+
+[http://localhost:3000](http://localhost:3000)
+
+The backend token server runs on:
+
+[http://localhost:8787/api/health](http://localhost:8787/api/health)
+
+## Gemini Enterprise Agent Platform Setup
+
+Use this setup when you want Google Cloud authentication instead of a Gemini API key.
+
+1. Log in with Application Default Credentials:
+
+```bash
+gcloud auth application-default login
+```
+
+2. Set `.env` like this:
+
+```env
+GEMINI_API_KEY=
+GOOGLE_CLOUD_PROJECT=your-google-cloud-project-id
+GOOGLE_CLOUD_LOCATION=global
+GOOGLE_GENAI_USE_ENTERPRISE=True
+GEMINI_LIVE_TRANSLATE_MODEL=gemini-3.5-live-translate-preview
+```
+
+3. Restart the app:
+
+```bash
+npm run dev
+```
+
+## Environment Files and Secrets
+
+`.env` is ignored by Git and must never be committed.
+
+Use `.env.example` as the safe template for open source:
+
+```env
+GEMINI_API_KEY=
+GOOGLE_CLOUD_PROJECT=
+GOOGLE_CLOUD_LOCATION=global
+GOOGLE_GENAI_USE_ENTERPRISE=False
+GEMINI_LIVE_TRANSLATE_MODEL=gemini-3.5-live-translate-preview
+```
+
+## Scripts
+
+```bash
+npm run dev
+```
+
+Starts both the Node token backend and the Vite frontend.
+
+```bash
+npm run server
+```
+
+Starts only the backend token server.
+
+```bash
+npm run dev:vite
+```
+
+Starts only the Vite frontend.
+
+```bash
+npm run build
+```
+
+Builds the frontend for production.
+
+## How It Works
+
+1. The frontend asks the local backend for a short-lived Live API token.
+2. The backend creates the token using `@google/genai`.
+3. The frontend opens a Gemini Live API session with `gemini-3.5-live-translate-preview`.
+4. Microphone audio is streamed as raw 16 kHz PCM.
+5. Gemini streams back translated 24 kHz PCM audio plus input/output transcripts.
+6. The app plays translated audio and keeps a replayable conversation history.
+
+## Project Structure
+
+```text
 .
-├── components/
-│   ├── ApiToggle.tsx            # UI for the Gemini/Vertex AI toggle switch
-│   ├── BottomControls.tsx       # UI for the language selectors and mic button
-│   └── ConversationBubble.tsx   # UI for a single message in the chat
-├── hooks/
-│   └── useAudioRecorder.ts      # Custom hook for managing audio recording and VAD
-├── services/
-│   └── geminiService.ts         # Logic for all API calls to Gemini (ASR, Translate, TTS)
-├── utils/
-│   └── audioUtils.ts            # Helper functions for decoding and playing PCM audio
-├── App.tsx                      # Main application component, state management
-├── index.html                   # HTML entry point
-├── index.tsx                    # React root renderer
-├── metadata.json                # App metadata and permissions
-└── types.ts                     # TypeScript type definitions
+|-- App.tsx
+|-- components/
+|   |-- BottomControls.tsx
+|   `-- ConversationBubble.tsx
+|-- hooks/
+|   `-- useLiveMicrophone.ts
+|-- services/
+|   `-- liveTranslateService.ts
+|-- utils/
+|   `-- pcmAudioQueue.ts
+|-- server.mjs
+|-- scripts/
+|   `-- dev.mjs
+|-- types.ts
+`-- vite.config.ts
 ```
 
----
+## Troubleshooting
 
-## ⚙️ Getting Started
+If the app says token creation failed, check `.env` and restart `npm run dev`.
 
-This project is designed to run in a web environment where the Gemini API key and Google Cloud configuration are securely managed as environment variables.
+If microphone access fails, allow microphone permissions in your browser.
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/marlonka/Geminus-Translator
-    ```
+If Gemini Enterprise Agent Platform setup fails, confirm your Google Cloud project has access to Gemini Live Translate and that `gcloud auth application-default login` completed successfully.
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-
-3.  **Set up Environment Variables:**
-    The app can run in two modes. You need to provide the appropriate environment variables for the mode(s) you wish to use.
-    *   **For Gemini API Mode**: Create a `.env.local` file and add your Gemini API key.
-        ```
-        # Required for Gemini API mode
-        API_KEY=YOUR_GEMINI_API_KEY
-        ```
-    *   **For Vertex AI Mode**: Set your Google Cloud Project ID as an environment variable. This is **required** for Vertex AI mode to function, especially when deploying to a service like Google Cloud Run.
-        ```
-        # Required for Vertex AI mode
-        GOOGLE_CLOUD_PROJECT=your-gcp-project-id
-        ```
-    *Note: The current code uses `process.env`. Your build tool (like Vite or Create React App) must be configured to expose these variables to the client.*
-
-4.  **Run the development server:**
-    ```bash
-    npm run dev
-    ```
-    Open your browser to the URL provided by your development server.
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+If port `3000` or `8787` is already in use, stop the old process and rerun `npm run dev`.
