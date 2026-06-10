@@ -124,16 +124,15 @@ export const BottomControls: React.FC<BottomControlsProps> = ({
 
         <div className="flex min-h-[28px] items-center justify-between gap-3">
           <div className="flex items-center gap-4">
-            {hasConversation && (
-              <button
-                type="button"
-                onClick={onGoHome}
-                className="flex items-center justify-center rounded-full p-1.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                aria-label="Zurück zur Startseite"
-              >
-                <HomeIcon className="h-5 w-5" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onGoHome}
+              disabled={!hasConversation}
+              className="flex items-center justify-center rounded-full p-1.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+              aria-label="Zurück zur Startseite"
+            >
+              <HomeIcon className="h-5 w-5" />
+            </button>
 
             <button
               type="button"
