@@ -108,5 +108,5 @@ app.post('/api/live-token', async (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`[server] Geminus token server listening on http://localhost:${port}`);
+  console.log(`[server] Dein Babelfischi token server listening on http://localhost:${port}`);
 });
