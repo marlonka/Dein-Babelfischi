@@ -16,19 +16,6 @@ function normalizeEchoTargetLanguage(value) {
 }
 
 function getClient() {
-  const project = process.env.GOOGLE_CLOUD_PROJECT;
-  const location = process.env.GOOGLE_CLOUD_LOCATION ?? 'global';
-  const useEnterprise = String(process.env.GOOGLE_GENAI_USE_ENTERPRISE ?? '').toLowerCase() === 'true';
-
-  if (useEnterprise && project) {
-    return new GoogleGenAI({
-      enterprise: true,
-      project,
-      location,
-      httpOptions: { apiVersion: 'v1alpha' },
-    });
-  }
-
   return new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY,
     httpOptions: { apiVersion: 'v1alpha' },
@@ -39,8 +26,7 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     model,
-    enterprise: String(process.env.GOOGLE_GENAI_USE_ENTERPRISE ?? '').toLowerCase() === 'true',
-    location: process.env.GOOGLE_CLOUD_LOCATION ?? 'global',
+    auth: 'gemini-api-key',
   });
 });
 
@@ -54,9 +40,9 @@ app.post('/api/live-token', async (req, res) => {
       return;
     }
 
-    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_CLOUD_PROJECT) {
+    if (!process.env.GEMINI_API_KEY) {
       res.status(500).json({
-        error: 'Missing Gemini credentials. Set GEMINI_API_KEY or GOOGLE_CLOUD_PROJECT with Google Cloud ADC.',
+        error: 'Missing Gemini API key. Set GEMINI_API_KEY in .env. Google Cloud auth is not supported for Live API ephemeral tokens.',
       });
       return;
     }

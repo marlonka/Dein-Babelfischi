@@ -1,101 +1,100 @@
 # Dein Babelfischi
 
-Dein Babelfischi is a real-time speech translation app built with React, Vite, Node, and the Google Gen AI SDK. It uses Gemini 3.5 Live Translate to listen to spoken audio, automatically detect the input language, and stream translated speech into one selected target language.
+![App-Vorschau von Dein Babelfischi](assets/babelfischi.jpg)
 
-## What changed
+Dein Babelfischi ist eine Echtzeit-Uebersetzungs-App fuer gesprochene Sprache. Die App hoert ueber das Mikrofon zu, erkennt die Eingangssprache automatisch und spricht die Uebersetzung in einer ausgewaehlten Zielsprache zurueck.
 
-- You only choose the target language.
-- The model detects the input language automatically.
-- `Echo target language` controls whether speech already spoken in the target language is repeated back.
-- Secrets stay on the local Node backend. The browser only receives short-lived Live API tokens.
+Gebaut mit React, Vite, Node und dem Google Gen AI SDK. Die Uebersetzung laeuft ueber Gemini 3.5 Live Translate.
 
-## Requirements
+## Was die App macht
 
-- Node.js 20 or newer
+- Du waehlst nur die Zielsprache aus.
+- Gemini erkennt die gesprochene Eingangssprache automatisch.
+- `Englisch auch vorlesen` steuert, ob Sprache in der Zielsprache ebenfalls wiederholt wird.
+- Der Gemini API Key bleibt im lokalen Node-Backend.
+- Der Browser bekommt nur kurzlebige Live API Tokens.
+
+## Wichtige Auth-Realitaet
+
+Diese App nutzt Gemini Live API Ephemeral Tokens, damit der Browser direkt mit Live Translate sprechen kann, ohne den langlebigen API Key offenzulegen.
+
+Dafuer brauchst du aktuell einen Gemini API Key aus Google AI Studio. Google Cloud ADC, Service-Account-Keys und Gemini Enterprise Agent Platform Auth funktionieren fuer diesen Token-Flow nicht.
+
+Kurz gesagt:
+
+```env
+GEMINI_API_KEY=dein_ai_studio_key
+```
+
+Nicht verwenden:
+
+```env
+GOOGLE_CLOUD_PROJECT=
+GOOGLE_GENAI_USE_ENTERPRISE=True
+```
+
+Diese Cloud-Variablen sind fuer andere Gemini Enterprise API Calls sinnvoll, aber nicht fuer den `client.authTokens.create()` Flow dieser App.
+
+## Voraussetzungen
+
+- Node.js 20 oder neuer
 - npm
-- A Gemini API key, or Google Cloud credentials for Gemini Enterprise Agent Platform
-- A browser with microphone access
+- Ein Gemini API Key aus Google AI Studio
+- Ein Browser mit Mikrofonzugriff
 
-## Quick Start With a Gemini API Key
+## Schnellstart
 
-1. Install dependencies:
+1. Abhaengigkeiten installieren:
 
 ```bash
 npm install
 ```
 
-2. Create your local environment file:
+2. Lokale Environment-Datei erstellen:
 
 ```bash
 cp .env.example .env
 ```
 
-On Windows PowerShell, use:
+Unter Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-3. Open `.env` and paste your key:
+3. `.env` oeffnen und den AI Studio Key eintragen:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
-GOOGLE_GENAI_USE_ENTERPRISE=False
+GEMINI_API_KEY=dein_ai_studio_key
+GEMINI_LIVE_TRANSLATE_MODEL=gemini-3.5-live-translate-preview
 ```
 
-4. Start the app:
+4. App starten:
 
 ```bash
 npm run dev
 ```
 
-5. Open:
+5. App oeffnen:
 
 [http://localhost:3000](http://localhost:3000)
 
-The backend token server runs on:
+Der lokale Token-Server laeuft hier:
 
 [http://localhost:8787/api/health](http://localhost:8787/api/health)
 
-## Gemini Enterprise Agent Platform Setup
+## Environment und Secrets
 
-Use this setup when you want Google Cloud authentication instead of a Gemini API key.
+`.env` ist in Git ignoriert und darf nicht committed werden.
 
-1. Log in with Application Default Credentials:
-
-```bash
-gcloud auth application-default login
-```
-
-2. Set `.env` like this:
+`.env.example` ist die sichere Vorlage fuer Open Source:
 
 ```env
 GEMINI_API_KEY=
-GOOGLE_CLOUD_PROJECT=your-google-cloud-project-id
-GOOGLE_CLOUD_LOCATION=global
-GOOGLE_GENAI_USE_ENTERPRISE=True
 GEMINI_LIVE_TRANSLATE_MODEL=gemini-3.5-live-translate-preview
 ```
 
-3. Restart the app:
-
-```bash
-npm run dev
-```
-
-## Environment Files and Secrets
-
-`.env` is ignored by Git and must never be committed.
-
-Use `.env.example` as the safe template for open source:
-
-```env
-GEMINI_API_KEY=
-GOOGLE_CLOUD_PROJECT=
-GOOGLE_CLOUD_LOCATION=global
-GOOGLE_GENAI_USE_ENTERPRISE=False
-GEMINI_LIVE_TRANSLATE_MODEL=gemini-3.5-live-translate-preview
-```
+Der API Key gehoert nur in `.env`, nie in den README, nie in Screenshots, nie in committed Code.
 
 ## Scripts
 
@@ -103,40 +102,42 @@ GEMINI_LIVE_TRANSLATE_MODEL=gemini-3.5-live-translate-preview
 npm run dev
 ```
 
-Starts both the Node token backend and the Vite frontend.
+Startet Backend und Vite-Frontend zusammen.
 
 ```bash
 npm run server
 ```
 
-Starts only the backend token server.
+Startet nur den lokalen Token-Server.
 
 ```bash
 npm run dev:vite
 ```
 
-Starts only the Vite frontend.
+Startet nur das Vite-Frontend.
 
 ```bash
 npm run build
 ```
 
-Builds the frontend for production.
+Erstellt den Production Build.
 
-## How It Works
+## Wie es funktioniert
 
-1. The frontend asks the local backend for a short-lived Live API token.
-2. The backend creates the token using `@google/genai`.
-3. The frontend opens a Gemini Live API session with `gemini-3.5-live-translate-preview`.
-4. Microphone audio is streamed as raw 16 kHz PCM.
-5. Gemini streams back translated 24 kHz PCM audio plus input/output transcripts.
-6. The app plays translated audio and keeps a replayable conversation history.
+1. Das Frontend fragt beim lokalen Backend ein kurzlebiges Live API Token an.
+2. Das Backend erstellt das Token mit `@google/genai`.
+3. Das Frontend oeffnet damit eine Gemini Live API Session mit `gemini-3.5-live-translate-preview`.
+4. Mikrofon-Audio wird als rohes 16 kHz PCM gestreamt.
+5. Gemini streamt uebersetztes 24 kHz PCM Audio plus Transkripte zurueck.
+6. Die App spielt die Uebersetzung ab und speichert den Verlauf zum erneuten Anhoeren.
 
-## Project Structure
+## Projektstruktur
 
 ```text
 .
 |-- App.tsx
+|-- assets/
+|   `-- babelfischi.jpg
 |-- components/
 |   |-- BottomControls.tsx
 |   `-- ConversationBubble.tsx
@@ -155,10 +156,10 @@ Builds the frontend for production.
 
 ## Troubleshooting
 
-If the app says token creation failed, check `.env` and restart `npm run dev`.
+Wenn die Token-Erstellung fehlschlaegt, pruefe `.env` und starte `npm run dev` neu.
 
-If microphone access fails, allow microphone permissions in your browser.
+Wenn du Google Cloud Auth versucht hast, wechsle zurueck zu einem Gemini API Key aus AI Studio. Der Backend-Endpunkt nutzt `client.authTokens.create()`, und diese Methode unterstuetzt hier nur den Gemini Developer API Token-Flow.
 
-If Gemini Enterprise Agent Platform setup fails, confirm your Google Cloud project has access to Gemini Live Translate and that `gcloud auth application-default login` completed successfully.
+Wenn das Mikrofon nicht funktioniert, erlaube den Mikrofonzugriff im Browser.
 
-If port `3000` or `8787` is already in use, stop the old process and rerun `npm run dev`.
+Wenn Port `3000` oder `8787` belegt ist, stoppe den alten Prozess und starte `npm run dev` erneut.
