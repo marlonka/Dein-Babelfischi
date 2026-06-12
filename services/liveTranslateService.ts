@@ -1,4 +1,4 @@
-import { GoogleGenAI, MediaResolution, Modality } from '@google/genai';
+import { GoogleGenAI, MediaResolution, Modality, type Session } from '@google/genai';
 import { LiveTokenResponse } from '../types';
 
 interface LiveTranslateCallbacks {
@@ -14,6 +14,14 @@ interface LiveTranslateStartOptions {
   targetLanguageCode: string;
   echoTargetLanguage: boolean;
   callbacks: LiveTranslateCallbacks;
+}
+
+interface LiveMessage {
+  serverContent?: {
+    inputTranscription?: { text?: string; languageCode?: string };
+    outputTranscription?: { text?: string; languageCode?: string };
+    modelTurn?: { parts?: Array<{ inlineData?: { data?: string } }> };
+  };
 }
 
 export async function requestLiveToken(
@@ -36,7 +44,7 @@ export async function requestLiveToken(
 }
 
 export class LiveTranslateClient {
-  private session: any | null = null;
+  private session: Session | null = null;
 
   async start({ targetLanguageCode, echoTargetLanguage, callbacks }: LiveTranslateStartOptions): Promise<void> {
     const tokenResponse = await requestLiveToken(targetLanguageCode, echoTargetLanguage);
@@ -53,41 +61,33 @@ export class LiveTranslateClient {
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         contextWindowCompression: {
-          triggerTokens: 0,
-          slidingWindow: { targetTokens: 0 },
+          triggerTokens: '0',
+          slidingWindow: { targetTokens: '0' },
         },
         translationConfig: {
           targetLanguageCode,
           echoTargetLanguage,
         },
-      } as any,
+      },
       callbacks: {
         onopen: callbacks.onOpen,
-        onmessage: (message: any) => {
+        onmessage: (message: LiveMessage) => {
           const content = message.serverContent;
+          const inputTranscript = content?.inputTranscription;
+          const outputTranscript = content?.outputTranscription;
 
-          if (content?.inputTranscription?.text) {
-            callbacks.onInputTranscript(
-              content.inputTranscription.text,
-              content.inputTranscription.languageCode
-            );
+          if (inputTranscript?.text) {
+            callbacks.onInputTranscript(inputTranscript.text, inputTranscript.languageCode);
           }
 
-          if (content?.outputTranscription?.text) {
-            callbacks.onOutputTranscript(
-              content.outputTranscription.text,
-              content.outputTranscription.languageCode
-            );
+          if (outputTranscript?.text) {
+            callbacks.onOutputTranscript(outputTranscript.text, outputTranscript.languageCode);
           }
 
-          const parts = content?.modelTurn?.parts ?? [];
-          for (const part of parts) {
-            if (part.inlineData?.data) {
-              callbacks.onAudioChunk(part.inlineData.data);
-            }
+          for (const part of content?.modelTurn?.parts ?? []) {
+            const audioData = part.inlineData?.data;
+            if (audioData) callbacks.onAudioChunk(audioData);
           }
-
-          // Live Translate is continuous; turnComplete is not a session-close signal.
         },
         onerror: (event: ErrorEvent) => {
           callbacks.onError(event.message || 'Live Translate session error.');

@@ -108,6 +108,10 @@ function mergeTranscript(previous: string, nextChunk: string): string {
   return `${normalizedPrevious} ${next}`.replace(/\s+/g, ' ').trim();
 }
 
+function isSessionActive(appState: AppState): boolean {
+  return appState === AppState.LIVE || appState === AppState.CONNECTING;
+}
+
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [targetLanguageCode, setTargetLanguageCode] = useState(DEFAULT_TARGET_LANGUAGE_CODE);
@@ -125,6 +129,19 @@ const App: React.FC = () => {
 
   const closeLiveClient = useCallback(() => {
     liveClientRef.current?.close();
+  }, []);
+
+  const updateConversationMessage = useCallback((
+    messageId: number | null,
+    update: (message: ConversationBubbleMessage) => ConversationBubbleMessage
+  ) => {
+    if (!messageId) return;
+
+    setConversation((current) =>
+      current.map((message) =>
+        message.id === messageId ? update(message) : message
+      )
+    );
   }, []);
 
   useEffect(() => {
@@ -155,17 +172,11 @@ const App: React.FC = () => {
     stopMicrophone();
     playbackQueueRef.current?.stop();
 
-    setConversation((current) =>
-      current.map((message) =>
-        message.type === 'CONVERSATION' && message.id === activeMessageId
-          ? { ...message, isLive: false }
-          : message
-      )
-    );
+    updateConversationMessage(activeMessageId, (message) => ({ ...message, isLive: false }));
 
     activeMessageIdRef.current = null;
     setAppState(AppState.IDLE);
-  }, [stopMicrophone]);
+  }, [stopMicrophone, updateConversationMessage]);
 
   const startLiveSession = useCallback(async () => {
     setError(null);
@@ -199,35 +210,23 @@ const App: React.FC = () => {
             setAppState(AppState.LIVE);
           },
           onInputTranscript: (text, languageCode) => {
-            setConversation((current) =>
-              current.map((message) =>
-                message.type === 'CONVERSATION' && message.id === messageId
-                  ? {
-                      ...message,
-                      sourceLang: languageCode ? getGermanLanguageNameByCode(languageCode) : message.sourceLang,
-                      transcription: mergeTranscript(message.transcription, text),
-                    }
-                  : message
-              )
-            );
+            updateConversationMessage(messageId, (message) => ({
+              ...message,
+              sourceLang: languageCode ? getGermanLanguageNameByCode(languageCode) : message.sourceLang,
+              transcription: mergeTranscript(message.transcription, text),
+            }));
           },
           onOutputTranscript: (text) => {
-            setConversation((current) =>
-              current.map((message) =>
-                message.type === 'CONVERSATION' && message.id === messageId
-                  ? { ...message, translation: mergeTranscript(message.translation, text) }
-                  : message
-              )
-            );
+            updateConversationMessage(messageId, (message) => ({
+              ...message,
+              translation: mergeTranscript(message.translation, text),
+            }));
           },
           onAudioChunk: (base64Pcm) => {
-            setConversation((current) =>
-              current.map((message) =>
-                message.type === 'CONVERSATION' && message.id === messageId
-                  ? { ...message, audioChunks: [...message.audioChunks, base64Pcm] }
-                  : message
-              )
-            );
+            updateConversationMessage(messageId, (message) => ({
+              ...message,
+              audioChunks: [...message.audioChunks, base64Pcm],
+            }));
 
             if (autoPlayback) {
               playbackQueueRef.current?.enqueue(base64Pcm);
@@ -256,10 +255,10 @@ const App: React.FC = () => {
       activeMessageIdRef.current = null;
       setAppState(AppState.IDLE);
     }
-  }, [autoPlayback, echoTargetLanguage, startMicrophone, stopLiveSession, targetLanguage.germanName, targetLanguageCode]);
+  }, [autoPlayback, echoTargetLanguage, startMicrophone, stopLiveSession, targetLanguage.germanName, targetLanguageCode, updateConversationMessage]);
 
   const handleMicToggle = () => {
-    if (appState === AppState.LIVE || appState === AppState.CONNECTING) {
+    if (isSessionActive(appState)) {
       stopLiveSession();
       return;
     }
@@ -268,7 +267,7 @@ const App: React.FC = () => {
   };
 
   const handleGoHome = () => {
-    if (appState === AppState.LIVE || appState === AppState.CONNECTING) {
+    if (isSessionActive(appState)) {
       stopLiveSession();
     }
     setConversation([]);

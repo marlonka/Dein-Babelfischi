@@ -4,7 +4,7 @@
 
 Dein Babelfischi ist eine Echtzeit-Uebersetzungs-App fuer gesprochene Sprache. Die App hoert ueber das Mikrofon zu, erkennt die Eingangssprache automatisch und spricht die Uebersetzung in einer ausgewaehlten Zielsprache zurueck.
 
-Gebaut mit React, Vite, Node und dem Google Gen AI SDK. Die Uebersetzung laeuft ueber Gemini 3.5 Live Translate.
+Gebaut mit React, Vite, Fastify, Node und dem Google Gen AI SDK. Die Uebersetzung laeuft ueber Gemini 3.5 Live Translate.
 
 ## Was die App macht
 
@@ -37,7 +37,7 @@ Diese Cloud-Variablen sind fuer andere Gemini Enterprise API Calls sinnvoll, abe
 
 ## Voraussetzungen
 
-- Node.js 20 oder neuer
+- Node.js 26.3.0 oder neuer
 - npm
 - Ein Gemini API Key aus Google AI Studio
 - Ein Browser mit Mikrofonzugriff
@@ -83,6 +83,11 @@ Der lokale Token-Server laeuft hier:
 
 [http://localhost:8787/api/health](http://localhost:8787/api/health)
 
+OpenShift/Kubernetes-Probes:
+
+- `GET /healthz`
+- `GET /readyz`
+
 ## Environment und Secrets
 
 `.env` ist in Git ignoriert und darf nicht committed werden.
@@ -109,6 +114,12 @@ npm run server
 ```
 
 Startet nur den lokalen Token-Server.
+
+```bash
+npm run typecheck
+```
+
+Prueft Frontend und Backend mit TypeScript.
 
 ```bash
 npm run dev:vite
@@ -147,7 +158,7 @@ Erstellt den Production Build.
 |   `-- liveTranslateService.ts
 |-- utils/
 |   `-- pcmAudioQueue.ts
-|-- server.mjs
+|-- server.ts
 |-- scripts/
 |   `-- dev.mjs
 |-- types.ts
@@ -162,4 +173,4 @@ Wenn du Google Cloud Auth versucht hast, wechsle zurueck zu einem Gemini API Key
 
 Wenn das Mikrofon nicht funktioniert, erlaube den Mikrofonzugriff im Browser.
 
-Wenn Port `3000` oder `8787` belegt ist, stoppe den alten Prozess und starte `npm run dev` erneut.
+Wenn Port `3000` oder `8787` belegt ist, stoppe den alten Prozess oder setze `PORT` fuer den Backend-Port.
